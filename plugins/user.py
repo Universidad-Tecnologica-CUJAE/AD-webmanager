@@ -184,7 +184,7 @@ def init(app):
                                action="Adicionar Usuario",
                                parent=url_for('tree_base'))
 
-    @app.route('/user/<username>', methods=['GET', 'POST'])
+    @app.route('/user/<username>', methods=['GET'])
     @ldap_auth("Domain Users")
     def user_overview(username):
         title = "Detalles del Usuario - %s" % username
