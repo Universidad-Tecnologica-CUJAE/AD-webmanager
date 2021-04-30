@@ -60,7 +60,6 @@ def init(app):
             if not base_split[0].lower().startswith("dc"):
                 parent = ",".join(base_split[1:])
 
-            print(entries)
             return jsonify(entries)
 
     def get_entries(filter_str, filter_select, base, scope):
