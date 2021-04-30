@@ -16,6 +16,7 @@
 # You can find the license on Debian systems in the file
 # /usr/share/common-licenses/GPL-2
 
+from flask.json import jsonify
 from libs.common import iri_for as url_for
 from settings import Settings
 from flask import abort, flash, g, render_template, redirect, request, session
@@ -226,7 +227,9 @@ def init(app):
             group_fields = [('sAMAccountName', "Nombre"),
                             ('description', u"Descripción")]
 
-            user = ldap_get_user(username=username)
+            user: dict = ldap_get_user(username=username)
+            if 'jpegPhoto' in user:
+                user.pop('jpegPhoto')
             group_details = []
             for group in ldap_get_membership(username):
                 group_details.append(ldap_get_group(group, 'distinguishedName'))
@@ -247,42 +250,12 @@ def init(app):
                 if not ldap_in_group(group_entry['sAMAccountName'], username):
                     group_choices += [(group_entry['distinguishedName'], group_entry['sAMAccountName'])]
 
-            form = UserAddGroup(request.form)
-            form.available_groups.choices = group_choices
-
-            if not form.is_submitted():
-                form.available_groups.data = "_"
-
-            if form.validate_on_submit():
-                try:
-                    group_to_add = form.available_groups.data
-                    if group_to_add == "_":
-                        flash(u"Debe escoger un grupo de la lista desplegable.", "error")
-                    else:
-                        group = ldap_get_entry_simple({'objectClass': 'group', 'distinguishedName': group_to_add})
-                        if 'member' in group:
-                            entries = set(group['member'])
-                        else:
-                            entries = set()
-                        entries.add(user['distinguishedName'])
-                        ldap_update_attribute(group_to_add, "member", list(entries))
-                        flash(u"Usuario añadido con éxito al grupo.", "success")
-                    return redirect(url_for('user_overview',username=username))
-                except ldap.LDAPError as e:
-                    e = dict(e.args[0])
-                    flash(e['info'], "error")
-            elif form.errors:
-                    flash(u"Falló la validación de los datos.", "error")
-
             parent = ",".join(user['distinguishedName'].split(',')[1:])
         
         else:
             abort(401)
 
-        return render_template("pages/user_overview_es.html", g=g, title=title, form=form,
-                               user=user, identity_fields=identity_fields,
-                               group_fields=group_fields, admin=admin, groups=groups, siccip_data=siccip_data,
-                               parent=parent, uac_values=LDAP_AD_USERACCOUNTCONTROL_VALUES)
+        return jsonify({"user": user, "groups": groups, "siccip_data": siccip_data})
 
     @app.route('/user/<username>/+changepw', methods=['GET', 'POST'])
     @ldap_auth("Domain Users")
