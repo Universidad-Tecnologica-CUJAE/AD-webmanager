@@ -16,17 +16,11 @@
 # You can find the license on Debian systems in the file
 # /usr/share/common-licenses/GPL-2
 
+import typing
 from libs.common import iri_for as url_for
 from settings import Settings
-from flask import g, render_template, request, redirect, abort
+from flask import g, render_template, request, redirect, abort, jsonify
 from libs.ldap_func import ldap_auth, ldap_get_entries, ldap_in_group
-from flask_wtf import FlaskForm
-from wtforms import StringField, SelectField
-
-
-class FilterTreeView(FlaskForm):
-    filter_str = StringField()
-    filter_select = SelectField(choices=Settings.SEARCH_ATTRS)
 
 
 def init(app):
@@ -49,28 +43,25 @@ def init(app):
             
             if Settings.TREE_ATTRIBUTES:
                 for item in Settings.TREE_ATTRIBUTES:
-                    entry_fields.append((item[0], item[1])) 
+                    entry_fields.append((item[0], item[1]))
 
-            form = FilterTreeView(request.form)
-
-            if form.validate_on_submit():
+            """ if form.validate_on_submit():
                 filter_str = form.filter_str.data
                 filter_select = form.filter_select.data
                 scope = "subtree"
-                entries = get_entries(filter_str, filter_select, base, scope)
-            else:
-                filter_str = None
-                scope = "onelevel"
-                entries = get_entries("top", "objectClass", base, scope)
+                entries = get_entries(filter_str, filter_select, base, scope) """
+            
+            filter_str = None
+            scope = "onelevel"
+            entries = get_entries("top", "objectClass", base, scope)
 
             parent = None
             base_split = base.split(',')
             if not base_split[0].lower().startswith("dc"):
                 parent = ",".join(base_split[1:])
 
-            return render_template("pages/tree_base_es.html", form=form, parent=parent,
-                                   admin=admin, base=base, entries=entries,
-                                   entry_fields=entry_fields)
+            print(entries)
+            return jsonify(entries)
 
     def get_entries(filter_str, filter_select, base, scope):
         """
@@ -83,7 +74,9 @@ def init(app):
         users = filter(lambda entry: 'sAMAccountName' in entry, users)
         users = filter(lambda entry: filter_select in entry, users)
         users = filter(lambda entry: filter_str in entry[filter_select], users)
-        users = sorted(users, key=lambda entry: entry['displayName'])
+        users: typing.List[typing.Dict] = sorted(
+            users, key=lambda entry: entry['displayName']
+        )
         if filter_str == "top":
             other_entries = ldap_get_entries("objectClass=top", base, scope, ignore_erros=True)
             other_entries = filter(lambda entry: 'displayName' not in entry, other_entries)
@@ -102,6 +95,9 @@ def init(app):
             entry['name'] = entry['displayName']
             entry['__type'] = "Usuario"
             entry['__target'] = url_for('user_overview', username=entry['sAMAccountName'])
+            # TODO: Fix this !!! we need photo support
+            if 'jpegPhoto' in entry:
+                entry.pop("jpegPhoto")
 
             if 'user' in entry['objectClass']:
                 if entry['userAccountControl'] == 512:
