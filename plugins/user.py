@@ -109,7 +109,7 @@ class PasswordChangeUser(PasswordChange):
 
 
 def init(app):
-    @app.route('/users/+add', methods=['POST'])
+    @app.route('/user/+add', methods=['POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
     def user_add():
         title = "Adicionar Usuario"
