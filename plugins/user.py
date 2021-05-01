@@ -16,6 +16,7 @@
 # You can find the license on Debian systems in the file
 # /usr/share/common-licenses/GPL-2
 
+from flask import json
 from flask.json import jsonify
 from libs.common import iri_for as url_for
 from settings import Settings
@@ -108,81 +109,52 @@ class PasswordChangeUser(PasswordChange):
 
 
 def init(app):
-    @app.route('/users/+add', methods=['GET', 'POST'])
+    @app.route('/users/+add', methods=['POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
     def user_add():
         title = "Adicionar Usuario"
 
-
-
-        if g.extra_fields:
-            form = UserAddExtraFields(request.form)
-        else:
-            form = UserAdd(request.form)
-        field_mapping = [('givenName', form.first_name),
-                         ('sn', form.last_name),
-                         ('sAMAccountName', form.user_name),
-                         ('mail', form.mail),
-                         ('pager', form.category),
-                         (None, form.password),
-                         (None, form.password_confirm),
-                         ('userAccountControl', form.uac_flags)]
-        if g.extra_fields:
-            extra_field_mapping = [('cUJAEPersonExternal', form.manual),
-                                   ('cUJAEPersonType', form.person_type),
-                                   ('cUJAEPersonDNI', form.dni)]
-            field_mapping += extra_field_mapping
-
-        form.visible_fields = [field[1] for field in field_mapping]
-        form.uac_flags.choices = [(key, value[0]) for key, value in LDAP_AD_USERACCOUNTCONTROL_VALUES.items()]
-
-        if form.validate_on_submit():
-            try:
-                base = request.args.get("b'base")
-                base = base.rstrip("'")
-                # Default attributes
-                upn = "%s@%s" % (form.user_name.data, g.ldap['domain'])
-                attributes = {'objectClass': [b'top', b'person', b'organizationalPerson', b'user', b'inetOrgPerson'],
-                              'UserPrincipalName': [upn.encode('utf-8')],
-                              'accountExpires': [b"0"],
-                              'lockoutTime': [b"0"],
-                              }
-
-                for attribute, field in field_mapping:
-                    if attribute == 'userAccountControl':
-                        current_uac = 512
-                        for key, flag in (LDAP_AD_USERACCOUNTCONTROL_VALUES.items()):
-                            if flag[1] and key in field.data:
-                                current_uac += key
-                        attributes[attribute] = [str(current_uac).encode('utf-8')]
-                    elif attribute and field.data:
-                        if isinstance(field, BooleanField):
-                            if field.data:
-                                attributes[attribute] = 'TRUE'.encode('utf-8')
-                            else:
-                                attributes[attribute] = 'FALSE'.encode('utf-8')
+        try:
+            data: dict = json.load(request.data)
+            base = data["base"]
+            data.pop(base)
+            # Default attributes
+            upn = "%s@%s" % (data["sAMAccountName"], g.ldap['domain'])
+            attributes = {
+                'objectClass': [b'top', b'person', b'organizationalPerson', b'user', b'inetOrgPerson'],
+                'UserPrincipalName': [upn.encode('utf-8')],
+                'accountExpires': [b"0"],
+                'lockoutTime': [b"0"],
+            }
+            for attribute, field in data:
+                if attribute == 'userAccountControl':
+                    current_uac = 512
+                    for key, flag in (LDAP_AD_USERACCOUNTCONTROL_VALUES.items()):
+                        if flag[1] and key in field:
+                            current_uac += key
+                    attributes[attribute] = [str(current_uac).encode('utf-8')]
+                elif attribute and field:
+                    if isinstance(field, bool):
+                        if field.data:
+                            attributes[attribute] = 'TRUE'.encode('utf-8')
                         else:
-                            attributes[attribute] = [field.data.encode('utf-8')]
-                if 'sn' in attributes:
-                    attributes['displayName'] = attributes['givenName'][0].decode('utf-8') + " " + attributes[
+                            attributes[attribute] = 'FALSE'.encode('utf-8')
+                    else:
+                        attributes[attribute] = [field.encode('utf-8')]
+            if 'sn' in attributes:
+                attributes['displayName'] = attributes['givenName'][0].decode('utf-8') + " " + attributes[
                                                                                                 'sn'][0].decode('utf-8')
-                    attributes['displayName'] = [attributes['displayName'].encode('utf-8')]
-                else:
-                    attributes['displayName'] = attributes['givenName']
+                attributes['displayName'] = [attributes['displayName'].encode('utf-8')]
+            else:
+                attributes['displayName'] = attributes['givenName']
 
-                ldap_create_entry("cn=%s,%s" % (form.user_name.data, base), attributes)
-                ldap_change_password(None, form.password.data, form.user_name.data)
-                flash(u"Usuario creado con éxito.", "success")
-                return redirect(url_for('user_overview', username=form.user_name.data))
-            except ldap.LDAPError as e:
-                e = dict(e.args[0])
-                flash(e['info'], "error")
-        elif form.errors:
-            print(form.errors)
-            flash("Some fields failed validation.", "error")
-        return render_template("forms/basicform.html", form=form, title=title,
-                               action="Adicionar Usuario",
-                               parent=url_for('tree_base'))
+            ldap_create_entry("cn=%s,%s" % (data["sAMAccountName"], base), attributes)
+            ldap_change_password(None, data["unicodePwd"], data["sAMAccountName"])
+            return jsonify({data["sAMAccountName"]: attributes})
+        except ldap.LDAPError as e:
+            return jsonify({"error": e})
+        except KeyError as e:
+            return jsonify({"error": e})
 
     @app.route('/user/<username>', methods=['GET'])
     @ldap_auth("Domain Users")
