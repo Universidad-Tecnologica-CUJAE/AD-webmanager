@@ -115,9 +115,9 @@ def init(app):
         title = "Adicionar Usuario"
 
         try:
-            data: dict = json.load(request.data)
+            data: dict = request.json
             base = data["base"]
-            data.pop(base)
+            data.pop("base")
             # Default attributes
             upn = "%s@%s" % (data["sAMAccountName"], g.ldap['domain'])
             attributes = {
@@ -126,7 +126,7 @@ def init(app):
                 'accountExpires': [b"0"],
                 'lockoutTime': [b"0"],
             }
-            for attribute, field in data:
+            for attribute, field in data.items():
                 if attribute == 'userAccountControl':
                     current_uac = 512
                     for key, flag in (LDAP_AD_USERACCOUNTCONTROL_VALUES.items()):
@@ -150,11 +150,13 @@ def init(app):
 
             ldap_create_entry("cn=%s,%s" % (data["sAMAccountName"], base), attributes)
             ldap_change_password(None, data["unicodePwd"], data["sAMAccountName"])
+            print('!!!!!!!!!!')
             return jsonify({data["sAMAccountName"]: attributes})
         except ldap.LDAPError as e:
-            return jsonify({"error": e})
+            return jsonify({"error": str(e)})
         except KeyError as e:
-            return jsonify({"error": e})
+           print(e)
+           return jsonify({"error": "Missing key {0}".format(str(e))})
 
     @app.route('/user/<username>', methods=['GET'])
     @ldap_auth("Domain Users")
