@@ -18,6 +18,8 @@
 
 from flask import json
 from flask.json import jsonify
+from flask.wrappers import Response
+from werkzeug.exceptions import HTTPException
 from libs.common import iri_for as url_for
 from settings import Settings
 from flask import abort, flash, g, render_template, redirect, request, session
@@ -96,24 +98,10 @@ class UserAddExtraFields(UserAdd):
     dni = StringField(label='Carné Identidad', validators=[DataRequired(), Length(min=11,max=11)])
 
 
-class PasswordChange(FlaskForm):
-    password = PasswordField(u'Nueva Contraseña', [DataRequired()])
-    password_confirm = PasswordField(u'Repetir Nueva Contraseña',
-                                     [DataRequired(),
-                                      EqualTo('password',
-                                              message=u'Las contraseñas deben coincidir')])
-
-
-class PasswordChangeUser(PasswordChange):
-    oldpassword = PasswordField(u'Contraseña actual', [DataRequired()])
-
-
 def init(app):
     @app.route('/user/+add', methods=['POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
     def user_add():
-        title = "Adicionar Usuario"
-
         try:
             data: dict = request.json
             base = data["base"]
@@ -232,47 +220,30 @@ def init(app):
 
         return jsonify({"user": user, "groups": groups, "siccip_data": siccip_data})
 
-    @app.route('/user/<username>/+changepw', methods=['GET', 'POST'])
+    @app.route('/user/<username>/+changepw', methods=['POST'])
     @ldap_auth("Domain Users")
     def user_changepw(username):
-        title = u"Cambiar contraseña"
 
         if not ldap_user_exists(username=username):
             abort(404)
 
         admin = ldap_in_group(Settings.ADMIN_GROUP)
 
-        if username != g.ldap['username'] and admin:
-            form = PasswordChange(request.form)
-            form.visible_fields = []
-        else:
-            form = PasswordChangeUser(request.form)
-            form.visible_fields = [form.oldpassword]
-
-        form.visible_fields += [form.password, form.password_confirm]
-
-        if form.validate_on_submit():
-            try:
-                if username != g.ldap['username'] and admin:
-                    ldap_change_password(None,
-                                         form.password.data,
-                                         username=username)
-                else:
-                    ldap_change_password(form.oldpassword.data,
-                                         form.password.data,
-                                         username=username)
-                flash(u"La contraseña se cambió con éxito.", "success")
-                return redirect(url_for('user_overview', username=username))
-            except ldap.LDAPError as e:
-                e = dict(e.args[0])
-                flash(e['info'], "error")
-        elif form.errors:
-                flash(u"Falló la validación de los datos.", "error")
-
-        return render_template("forms/basicform.html", form=form, title=title,
-                               action=u"Cambiar contraseña",
-                               parent=url_for('user_overview',
-                                              username=username))
+        try:
+            data = request.json
+            if username != g.ldap['username'] and admin:
+                ldap_change_password(None, data["new_password"],
+                                     username=username)
+            else:
+                ldap_change_password(None, data["old_password"],
+                                     data["new_password"], username=username)
+            return jsonify({"response": "success"})
+        except ldap.LDAPError as e:
+            e = dict(e.args[0])
+            return jsonify(e)
+        except KeyError as e:
+           print(e)
+           return jsonify({"response": "Missing key {0}".format(str(e))})
 
     @app.route('/user/<username>/+delete', methods=['GET', 'POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
