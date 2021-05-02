@@ -78,26 +78,6 @@ class SICCIPEdit(FlaskForm):
     dansguardian_filter = IntegerField(u'Número del filtro de contenido')
 
 
-class UserAdd(UserProfileEdit):
-    base = None
-    password = PasswordField(u'Contraseña', [DataRequired()])
-    password_confirm = PasswordField(u'Repetir contraseña',
-                                     [DataRequired(),
-                                      EqualTo('password',
-                                              message=u'Las contraseñas deben coincidir')])
-    
-    category = SelectField(choices=[('D', 'Sin Internet'),
-                                    ('A', 'Categoria A'),
-                                    ('B', 'Categoria B'),
-                                    ('C', 'Categoria C'),
-                                    ('Auto', 'Automático')])
-
-class UserAddExtraFields(UserAdd):
-    manual = BooleanField(label="Usuario Manual", validators=[DataRequired()], render_kw={'checked': True})
-    person_type = SelectField(label="Tipo de Persona", choices=[('Worker', "Trabajador"), ('Student', "Estudiante")])
-    dni = StringField(label='Carné Identidad', validators=[DataRequired(), Length(min=11,max=11)])
-
-
 def init(app):
     @app.route('/user/+add', methods=['POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
@@ -245,7 +225,7 @@ def init(app):
            print(e)
            return jsonify({"response": "Missing key {0}".format(str(e))})
 
-    @app.route('/user/<username>/+delete', methods=['GET', 'POST'])
+    @app.route('/user/<username>', methods=['DELETE'])
     @ldap_auth(Settings.ADMIN_GROUP)
     def user_delete(username):
         title = "Borrar Usuario"
@@ -253,25 +233,13 @@ def init(app):
         if not ldap_user_exists(username=username):
             abort(404)
 
-        form = FlaskForm(request.form)
-
-        if form.validate_on_submit():
-            try:
-                user = ldap_get_user(username=username)
-                ldap_delete_entry(user['distinguishedName'])
-                flash(u"Usuario borrado con éxito.", "success")
-                return redirect(url_for('core_index'))
-            except ldap.LDAPError as e:
-                e = dict(e.args[0])
-                flash(e['info'], "error")
-        elif form.errors:
-                flash(u"Falló la validación de los datos.", "error")
-
-        return render_template("pages/user_delete_es.html", title=title,
-                               action="Borrar Usuario", form=form,
-                               username=username,
-                               parent=url_for('user_overview',
-                                              username=username))
+        try:
+            user = ldap_get_user(username=username)
+            ldap_delete_entry(user['distinguishedName'])
+            return jsonify({"response": "success"})
+        except ldap.LDAPError as e:
+            e = dict(e.args[0])
+            return jsonify(e)
 
     @app.route('/user/<username>/+edit-profile', methods=['GET', 'POST'])
     @ldap_auth(Settings.ADMIN_GROUP)
