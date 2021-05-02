@@ -117,7 +117,9 @@ def init(app):
         try:
             data: dict = request.json
             base = data["base"]
+            password = data["unicodePwd"]
             data.pop("base")
+            data.pop("unicodePwd")
             # Default attributes
             upn = "%s@%s" % (data["sAMAccountName"], g.ldap['domain'])
             attributes = {
@@ -149,11 +151,10 @@ def init(app):
                 attributes['displayName'] = attributes['givenName']
 
             ldap_create_entry("cn=%s,%s" % (data["sAMAccountName"], base), attributes)
-            ldap_change_password(None, data["unicodePwd"], data["sAMAccountName"])
-            print('!!!!!!!!!!')
-            return jsonify({data["sAMAccountName"]: attributes})
-        except ldap.LDAPError as e:
-            return jsonify({"error": str(e)})
+            ldap_change_password(None, password, data["sAMAccountName"])
+            return jsonify({data["sAMAccountName"]})
+        #except ldap.LDAPError as e:
+        #    return jsonify({"error": str(e)})
         except KeyError as e:
            print(e)
            return jsonify({"error": "Missing key {0}".format(str(e))})
