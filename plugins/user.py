@@ -152,12 +152,12 @@ def init(app):
 
             ldap_create_entry("cn=%s,%s" % (data["sAMAccountName"], base), attributes)
             ldap_change_password(None, password, data["sAMAccountName"])
-            return jsonify({data["sAMAccountName"]})
-        #except ldap.LDAPError as e:
-        #    return jsonify({"error": str(e)})
+            return jsonify({"response": "ok"}) # TODO: Improve this
+        except ldap.LDAPError as e:
+           return jsonify({"response": str(e)})
         except KeyError as e:
            print(e)
-           return jsonify({"error": "Missing key {0}".format(str(e))})
+           return jsonify({"response": "Missing key {0}".format(str(e))})
 
     @app.route('/user/<username>', methods=['GET'])
     @ldap_auth("Domain Users")
